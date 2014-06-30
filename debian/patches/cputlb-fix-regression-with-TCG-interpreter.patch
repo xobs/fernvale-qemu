@@ -1,0 +1,64 @@
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Subject: cputlb: Fix regression with TCG interpreter (bug 1310324)
+From: Stefan Weil <sw@weilnetz.de>
+X-Patchwork-Id: 343504
+Message-Id: <1398705600-26047-1-git-send-email-sw@weilnetz.de>
+To: Richard Henderson <rth@twiddle.net>
+Cc: Giovanni Mascellani <gio@debian.org>, Stefan Weil <sw@weilnetz.de>,
+ qemu-stable@nongnu.org, qemu-devel@nongnu.org,
+ Paolo Bonzini <pbonzini@redhat.com>,
+ =?UTF-8?q?Andreas=20F=C3=A4rber?= <afaerber@suse.de>
+Date: Mon, 28 Apr 2014 19:20:00 +0200
+Bug-Debian: http://bugs.debian.org/744342
+Bug: https://bugs.launchpad.net/bugs/1310324
+
+Commit 0f842f8a246f2b5b51a11c13f933bf7a90ae8e96 replaced GETPC_EXT() which
+was derived from GETPC() by GETRA_EXT() without fixing cputlb.c. A later
+patch replaced GETRA_EXT() by GETRA() in exec/softmmu_template.h which
+is included in cputlb.c.
+
+The TCG interpreter failed because the values returned by GETRA() were no
+longer explicitly set to 0. The redefinition of GETRA() introduced here
+fixes this.
+
+In addition, GETPC_ADJ which is also used in exec/softmmu_template.h is
+set to 0. Both changes reduce the compiled code size for cputlb.c by more
+than 100 bytes, so the normal TCG without interpreter also profits from
+the reduced code size and slightly faster code.
+
+Cc: qemu-stable@nongnu.org
+Reported-by: Giovanni Mascellani <gio@debian.org>
+Signed-off-by: Stefan Weil <sw@weilnetz.de>
+Reviewed-by: Richard Henderson <rth@twiddle.net>
+
+---
+This patch can be used for QEMU 1.7.x and 2.0.x, too.
+It fixes the bug as tested by Giovanni and by myself.
+
+Additional improvements will be handled by separate patches.
+
+Regards
+Stefan
+
+ cputlb.c |    6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/cputlb.c b/cputlb.c
+index 7bd3573..214c945 100644
+--- a/cputlb.c
++++ b/cputlb.c
+@@ -331,8 +331,10 @@ tb_page_addr_t get_page_addr_code(CPUArchState *env1, target_ulong addr)
+ }
+ 
+ #define MMUSUFFIX _cmmu
+-#undef GETPC
+-#define GETPC() ((uintptr_t)0)
++#undef GETPC_ADJ
++#define GETPC_ADJ 0
++#undef GETRA
++#define GETRA() ((uintptr_t)0)
+ #define SOFTMMU_CODE_ACCESS
+ 
+ #define SHIFT 0

@@ -1,0 +1,29 @@
+usr/share/seabios/bios.bin usr/share/qemu/bios.bin
+usr/share/seabios/bios-256k.bin usr/share/qemu/bios-256k.bin
+usr/share/seabios/optionrom/linuxboot.bin usr/share/qemu/linuxboot.bin
+usr/share/seabios/optionrom/multiboot.bin usr/share/qemu/multiboot.bin
+usr/share/seabios/optionrom/extboot.bin usr/share/qemu/extboot.bin
+usr/share/seabios/optionrom/kvmvapic.bin usr/share/qemu/kvmvapic.bin
+usr/share/seabios/acpi-dsdt.aml usr/share/qemu/acpi-dsdt.aml
+usr/share/seabios/q35-acpi-dsdt.aml usr/share/qemu/q35-acpi-dsdt.aml
+usr/share/seabios/vgabios-isavga.bin usr/share/qemu/vgabios.bin
+usr/share/seabios/vgabios-cirrus.bin usr/share/qemu/vgabios-cirrus.bin
+usr/share/seabios/vgabios-qxl.bin usr/share/qemu/vgabios-qxl.bin
+usr/share/seabios/vgabios-stdvga.bin usr/share/qemu/vgabios-stdvga.bin
+usr/share/seabios/vgabios-vmware.bin usr/share/qemu/vgabios-vmware.bin
+# pxe/efi netroms from ipxe-qemu package.
+# Point to old locations for pxe, but use new locations for efi --
+# this way, we can use either old version of ipxe-qemu or new version.
+# Eventually we should switch to path-based search for these files.
+usr/lib/ipxe/rtl8139.rom usr/share/qemu/pxe-rtl8139.rom
+usr/lib/ipxe/e1000_82540.rom usr/share/qemu/pxe-e1000.rom
+usr/lib/ipxe/virtio-net.rom usr/share/qemu/pxe-virtio.rom
+usr/lib/ipxe/pcnet32.rom usr/share/qemu/pxe-pcnet.rom
+usr/lib/ipxe/ns8390.rom usr/share/qemu/pxe-ne2k_pci.rom
+usr/lib/ipxe/eepro100.rom usr/share/qemu/pxe-eepro100.rom
+usr/lib/ipxe/qemu/efi-e1000.rom usr/share/qemu/efi-e1000.rom
+usr/lib/ipxe/qemu/efi-eepro100.rom usr/share/qemu/efi-eepro100.rom
+usr/lib/ipxe/qemu/efi-ne2k_pci.rom usr/share/qemu/efi-ne2k_pci.rom
+usr/lib/ipxe/qemu/efi-pcnet.rom usr/share/qemu/efi-pcnet.rom
+usr/lib/ipxe/qemu/efi-rtl8139.rom usr/share/qemu/efi-rtl8139.rom
+usr/lib/ipxe/qemu/efi-virtio.rom usr/share/qemu/efi-virtio.rom

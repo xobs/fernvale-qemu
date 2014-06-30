@@ -1,0 +1,273 @@
+#!/usr/bin/make -f
+
+DEB_VENDOR := $(shell dpkg-vendor --query vendor)
+ifeq ($(DEB_VENDOR),Ubuntu)
+VENDOR := ubuntu
+DEB_BUILD_PARALLEL = yes
+else
+VENDOR := debian
+endif
+
+# support parallel build using DEB_BUILD_OPTIONS=parallel=N
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+  MAKEFLAGS += -j$(patsubst parallel=%,%,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+endif
+
+# Packaging version
+DEB_VERSION := $(shell dpkg-parsechangelog | egrep '^Version:' | cut -f 2 -d ' ')
+
+# Compiler flags
+CFLAGS = $(shell dpkg-buildflags --get CFLAGS) $(shell dpkg-buildflags --get CPPFLAGS)
+LDFLAGS = $(shell dpkg-buildflags --get LDFLAGS) -Wl,--as-needed
+# verbose build
+V ?= 1
+
+# Architecture/system specific configuration
+DEB_HOST_ARCH = $(shell dpkg-architecture -qDEB_HOST_ARCH)
+DEB_HOST_ARCH_OS = $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
+# list of packages we're supposed to build
+BUILD_PACKAGES = $(shell dh_listpackages)
+
+enable_system = $(if $(filter qemu-system,${BUILD_PACKAGES}),enable,disable)
+enable_linux_user = $(if $(filter qemu-user,${BUILD_PACKAGES}),enable,disable)
+
+# we add another set of configure options from debian/control
+common_configure_opts = \
+	--with-pkgversion="Debian $(DEB_VERSION)" \
+	--extra-cflags="$(CFLAGS)" \
+	--extra-ldflags="$(LDFLAGS)" \
+	--prefix=/usr \
+	--sysconfdir=/etc \
+	--libexecdir=/usr/lib \
+	--localstatedir=/var \
+	--disable-blobs \
+	--disable-strip \
+	--with-system-pixman \
+	--interp-prefix=/etc/qemu-binfmt/%M \
+	--localstatedir=/var \
+
+ifeq (${enable_system},enable)
+
+# list of system (softmmu) targets, from ./configure
+system_targets = \
+ i386 x86_64 alpha aarch64 arm cris lm32 m68k microblaze microblazeel \
+ mips mipsel mips64 mips64el moxie or32 ppc ppcemb ppc64 sh4 sh4eb \
+ sparc sparc64 s390x xtensa xtensaeb unicore32
+
+# qemu-system subpackages, from d/control
+sys_systems = arm mips ppc sparc x86
+systems = ${sys_systems} misc
+sysarch_arm   = $(filter aarch64 arm,${system_targets})
+sysarch_mips  = $(filter mips mipsel mips64 mips64el,${system_targets})
+sysarch_ppc   = $(filter ppc ppc64 ppcemb,${system_targets})
+sysarch_sparc = $(filter sparc sparc64,${system_targets})
+sysarch_x86   = $(filter i386 x86_64,${system_targets})
+sysarch_misc  = $(filter-out $(foreach s,${sys_systems},${sysarch_$s}),${system_targets})
+
+else
+
+systems =
+
+endif # enable_system
+
+ifeq (${enable_linux_user},enable)
+
+# list of linux-user targets, from ./configure
+user_targets = \
+ i386 x86_64 alpha aarch64 arm armeb cris m68k microblaze microblazeel \
+ mips mipsel mips64 mips64el mipsn32 mipsn32el or32 \
+ ppc ppc64 ppc64abi32 sh4 sh4eb sparc sparc64 sparc32plus \
+ unicore32 s390x
+
+endif	# enable_linux_user
+
+# Cross compiling support
+ifneq ($(DEB_BUILD_GNU_TYPE), $(DEB_HOST_GNU_TYPE))
+common_configure_opts  += --cross-prefix=$(DEB_HOST_GNU_TYPE)-
+endif
+
+configure-stamp: configure
+	dh_testdir
+
+	# system build
+	mkdir -p qemu-build && cd qemu-build && \
+	   ../configure ${common_configure_opts} --disable-user \
+		--${enable_system}-system \
+		--${enable_linux_user}-linux-user \
+		$(shell sh debian/extract-config-opts \
+		    $(DEB_HOST_ARCH_OS)-$(DEB_HOST_ARCH) debian/control) \
+		$(QEMU_CONFIGURE_OPTIONS) || \
+	 { echo ===== CONFIGURE FAILED ===; tail -n 50 config.log; exit 1; }
+
+ifeq ($(DEB_HOST_ARCH_OS),kfreebsd)
+# Hack alert.  qemu-1.3 still needs this.
+# On recent kFreebsd, old USB host API has been removed,
+# but qemu did not learn to use new USB API.
+# Just do not build USB host support.
+	sed -i 's/^HOST_USB=bsd/HOST_USB=stub/' \
+		qemu-build/config-host.mak
+endif
+
+ifeq ($(enable_linux_user),enable)
+# do not use debian/configure-opts here, all optional stuff will be enabled
+# automatically, dependencies are already verified in the main build
+	mkdir -p user-static-build && cd user-static-build && \
+		../configure ${common_configure_opts} \
+			--static --disable-system \
+			--target-list="$(addsuffix -linux-user,${user_targets})"
+endif
+	touch $@
+
+build: build-arch build-indep
+build-arch: build-stamp
+build-indep: build-stamp
+build-stamp: configure-stamp
+	dh_testdir
+
+	# system and utils build
+	$(MAKE) -C qemu-build V=${V}
+ifeq (${enable_system},enable)
+	dtc -o qemu-build/pc-bios/bamboo.dtb pc-bios/bamboo.dts
+endif
+
+ifeq ($(enable_linux_user),enable)
+	# user-static build
+	# we use this invocation to build just the binaries
+	$(MAKE) -C user-static-build V=${V} $(foreach t,${user_targets},subdir-${t}-linux-user)
+endif
+	touch $@
+
+clean:	debian/control
+	dh_testdir
+	rm -rf *-build/
+	rm -f *-stamp
+	find scripts/ -name '*.pyc' -delete || :
+	dh_clean
+
+# define ${ai} variable to be one of -i (indep), -a (arch) or nothing (both)
+ai :=
+binary-indep: ai := -i
+binary-indep: install
+binary-arch: ai := -a
+binary-arch: install
+binary: install
+
+define inst-system
+# remove alternatives for jessie+1
+	sed 's/@ARCH@/${sysarch_$1}/' debian/qemu-system-alternatives.in > debian/qemu-system-$1.postinst.debhelper
+	mkdir -p debian/qemu-system-$1/usr/share/man/man1 debian/qemu-system-$1/usr/bin
+	for t in ${sysarch_$1}; do \
+	    mv debian/tmp/usr/bin/qemu-system-$$t debian/qemu-system-$1/usr/bin/; \
+	    echo ".so man1/qemu.1" > debian/qemu-system-$1/usr/share/man/man1/qemu-system-$$t.1; \
+	done
+	echo sysarch:$1=${sysarch_$1} > debian/qemu-system-$1.substvars
+	echo sysprovides:$1=${addprefix qemu-system-,${filter-out $1,${sysarch_$1}}} | \
+	  sed -e 's/ /, /g' -e 'y/_/-/' >> debian/qemu-system-$1.substvars
+
+endef
+
+install: build-stamp
+	dh_testdir
+	dh_testroot
+	dh_prep
+	dh_installdirs -a
+
+	# system and utils install
+	$(MAKE) -C qemu-build DESTDIR=$(CURDIR)/debian/tmp install
+
+ifeq (${enable_system},enable)
+
+	# qemu-system subpackages
+	$(foreach s,${systems},$(call inst-system,$s))
+
+ifeq ($(DEB_HOST_ARCH_OS),linux)
+
+# /usr/bin/kvm compat script.  This needs some more work for other arches
+# How about a manpage for it?
+ifneq ($(filter $(DEB_HOST_ARCH),amd64 i386),)
+	dh_install -pqemu-kvm debian/kvm /usr/bin/
+	dh_install -pqemu-kvm debian/kvm.1 /usr/share/man/man1/
+endif
+
+# virtfs-proxy-helper is linux-specific
+	for f in usr/bin/virtfs-proxy-helper \
+	         usr/share/man/man1/virtfs-proxy-helper.1 ; do \
+	  mkdir -p debian/qemu-system-common/$${f%/*} ; \
+	  mv debian/tmp/$$f debian/qemu-system-common/$$f ; \
+	done
+
+endif # linux
+
+endif # enable_system
+
+ifeq ($(enable_linux_user),enable)
+	# qemu-user
+	mkdir -p debian/qemu-user/usr/bin debian/qemu-user/usr/share/man/man1
+	for t in ${user_targets}; do \
+	    mv debian/tmp/usr/bin/qemu-$$t \
+		debian/qemu-user/usr/bin ; \
+	    ln -s qemu-user.1 \
+		debian/qemu-user/usr/share/man/man1/qemu-$$t.1 ; \
+	done
+
+	# qemu-user-static
+	mkdir -p debian/qemu-user-static/usr/bin debian/qemu-user-static/usr/share/man/man1
+	for t in ${user_targets}; do \
+	    cp -p user-static-build/$$t-linux-user/qemu-$$t \
+		debian/qemu-user-static/usr/bin/qemu-$$t-static ; \
+	    ln -s qemu-user-static.1 \
+		    debian/qemu-user-static/usr/share/man/man1/qemu-$$t-static.1 ; \
+	done
+
+	# binfmt support
+	for x in postinst prerm; do \
+	    sed -e s/@SUFFIX@/-static/ -e s/@PACKAGE@/qemu-user-static/ \
+		debian/binfmt-update-in >> debian/qemu-user-static.$$x.debhelper ; \
+	    sed -e s/@SUFFIX@// -e s/@PACKAGE@/qemu-user-binfmt/ \
+		debian/binfmt-update-in >> debian/qemu-user-binfmt.$$x.debhelper ; \
+	done
+
+endif	# enable_linux_user
+
+# install whole thing so --list-missing works right
+	dh_install --list-missing
+# install the rest for arch/indep as needed
+	dh_installdocs ${ai} -Nqemu-user-binfmt
+	dh_installchangelogs ${ai} -Nqemu-user-binfmt Changelog
+	dh_installdocs ${ai} -pqemu-user-binfmt --link-doc=qemu-user
+	dh_installman ${ai}
+	dh_installudev ${ai}
+ifneq (${ai},-i)	# do not run this for binary-indep
+ifeq (${enable_system},enable)
+# qemu-ifup is arch-specific
+	install -D debian/qemu-ifup.$(DEB_HOST_ARCH_OS) \
+		debian/qemu-system-common/etc/qemu-ifup
+ifneq ($(filter $(DEB_HOST_ARCH),amd64 i386),)
+# we load kvm module only on x86 (modern kernels don't need even that),
+# and we don't want to fail installation if module can't be loaded
+# remoe past jessie (and maybe for jessie too)
+	dh_installinit -pqemu-system-x86 --no-restart-on-upgrade --error-handler=: -- start 20 S .
+endif
+endif
+	dh_installinit -pqemu-guest-agent
+endif
+	dh_link ${ai}
+	dh_strip ${ai}
+	dh_compress ${ai}
+	dh_fixperms ${ai}
+	dh_installdeb ${ai}
+	dh_shlibdeps ${ai}
+	dh_gencontrol ${ai}
+	dh_md5sums ${ai}
+	dh_builddeb ${ai}
+
+ifneq (,$(wildcard debian/control-in))
+# only include rules for debian/control if debian/control-in is present
+debian/control: debian/control-in debian/rules
+	sed -e 's/^:${VENDOR}://' -e '/^:[a-z]*:/D' \
+		$< > $@.tmp
+	mv -f $@.tmp $@
+endif
+
+.PHONY: build clean binary-indep binary-arch binary install
+

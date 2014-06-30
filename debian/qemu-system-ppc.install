@@ -1,0 +1,1 @@
+qemu-build/pc-bios/*.dtb usr/share/qemu/

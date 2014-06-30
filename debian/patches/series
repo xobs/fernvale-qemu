@@ -1,0 +1,12 @@
+02_kfreebsd.patch
+retry-pxe-after-efi.patch
+use-fixed-data-path.patch
+mjt-set-oem-in-rsdt-like-slic.diff
+move-ncalrpc-dir-to-tmp.patch
+doc-grammify-allows-to.patch
+exec-limit-translation-limiting-in-address_space_translate-to-xen.diff
+cputlb-fix-regression-with-TCG-interpreter.patch
+block-fmt-validation/qcow1-check-maximum-cluster-size.patch
+block-fmt-validation/qcow1-validate-L2-table-size-CVE-2014-0222.patch
+block-fmt-validation/qcow1-validate-image-size-CVE-2014-0223.patch
+block-fmt-validation/qcow1-stricter-backing-file-length-check.patch

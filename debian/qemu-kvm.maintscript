@@ -1,0 +1,4 @@
+rm_conffile /etc/kvm/kvm-ifup 1.5.0+dfsg-3~
+rm_conffile /etc/kvm/kvm-ifdown 1.5.0+dfsg-3~
+rm_conffile /etc/kvm/target-x86_64.conf 1.5.0+dfsg-3~
+rm_conffile /etc/init.d/qemu-kvm 1.5.0+dfsg-5~

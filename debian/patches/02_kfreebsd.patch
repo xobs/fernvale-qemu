@@ -1,0 +1,24 @@
+kFreeBSD has stub utimensat() up to version 9.  Without
+this change qemu configure "thinks" that the system has
+utimensat support and tries to use (CPP) symbols which
+comes in system headers together with utimensat(),
+namely UTIME_OMIT and UTIME_NOW, but thoes are not
+defined.
+
+--- a/configure
++++ b/configure
+@@ -3043,6 +3043,14 @@ cat > $TMPC << EOF
+ #include <fcntl.h>
+ #include <sys/stat.h>
+ 
++#if defined __stub_futimens || defined __stub___futimens
++choke me
++#endif
++
++#if defined __stub_utimensat || defined __stub___utimensat
++choke me
++#endif
++
+ int main(void)
+ {
+     utimensat(AT_FDCWD, "foo", NULL, 0);

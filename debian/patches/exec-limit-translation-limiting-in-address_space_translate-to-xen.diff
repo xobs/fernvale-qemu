@@ -1,0 +1,43 @@
+From: Alexey Kardashevskiy <aik@ozlabs.ru>
+Subject: [PATCH] exec: Limit translation limiting in address_space_translate to xen
+Date: Thu, 27 Mar 2014 15:35:26 +1100
+Message-ID: <1395894926-16633-1-git-send-email-aik@ozlabs.ru>
+Cc: Alexey Kardashevskiy <aik@ozlabs.ru>, Paolo Bonzini <pbonzini@redhat.com>
+To: qemu-devel@nongnu.org
+Comment: fixes windows boot BSOD with virtio-scsi (in 1.7.1 and 2.0)
+
+The address_space_translate() function cuts the returned plen (page size)
+to hardcoded TARGET_PAGE_SIZE. This function can be used on pages bigger
+than that so this limiting should not be used on such pages.
+
+Since originally the limiting was introduced for XEN, we can safely
+limit this piece of code to XEN. So does the patch.
+
+Suggested-by: Paolo Bonzini <pbonzini@redhat.com>
+Signed-off-by: Alexey Kardashevskiy <aik@ozlabs.ru>
+---
+
+I need this change for VFIO-on-sPAPR series as it is going to support
+16MB IOMMU pages. Thanks.
+---
+ exec.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/exec.c b/exec.c
+index 91513c6..cf12049 100644
+--- a/exec.c
++++ b/exec.c
+@@ -380,7 +380,7 @@ MemoryRegion *address_space_translate(AddressSpace *as, hwaddr addr,
+         as = iotlb.target_as;
+     }
+ 
+-    if (memory_access_is_direct(mr, is_write)) {
++    if (xen_enabled() && memory_access_is_direct(mr, is_write)) {
+         hwaddr page = ((addr & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE) - addr;
+         len = MIN(page, len);
+     }
+-- 
+1.8.4.rc4
+
+
+

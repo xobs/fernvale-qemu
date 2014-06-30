@@ -1,0 +1,68 @@
+commit 4933716beef26b353a1c374d6d8e6dd2e09333af
+Author: Michael Tokarev <mjt@tls.msk.ru>
+Date:   Sat Apr 5 19:17:54 2014 +0400
+Subject: copy OEM ACPI parameters from SLIC table to RSDT
+    
+When building RSDT table, pick OEM ID fields from uer-supplied SLIC
+table instead of using hard-coded QEMU defaults.  This way, say,
+OEM version of Windows7 can be run inside qemu using the same OEM
+activation as on bare metal, by pointing at system firmware:
+
+  -acpitable file=/sys/firmware/acpi/tables/SLIC
+
+Windows7 requires that OEM ID in RSDT matches those in SLIC to
+consider SLIC to be valid.
+
+This is somewhat hackish approach, but it works fairy well in
+practice.
+    
+Signed-off-by: Michael Tokarev <mjt@tls.msk.ru>
+
+diff --git a/hw/acpi/core.c b/hw/acpi/core.c
+index 79414b4..a8a3f26 100644
+--- a/hw/acpi/core.c
++++ b/hw/acpi/core.c
+@@ -53,6 +53,7 @@ static const char unsigned dfl_hdr[ACPI_TABLE_HDR_SIZE - ACPI_TABLE_PFX_SIZE] =
+ 
+ char unsigned *acpi_tables;
+ size_t acpi_tables_len;
++size_t slic_table_offset;
+ 
+ static QemuOptsList qemu_acpi_opts = {
+     .name = "acpi",
+@@ -226,6 +227,10 @@ static void acpi_table_install(const char unsigned *blob, size_t bloblen,
+     /* recalculate checksum */
+     ext_hdr->checksum = acpi_checksum((const char unsigned *)ext_hdr +
+                                       ACPI_TABLE_PFX_SIZE, acpi_payload_size);
++
++    if (memcmp(ext_hdr->sig, "SLIC", 4) == 0) {
++       slic_table_offset = acpi_tables_len - acpi_payload_size;
++    }
+ }
+ 
+ void acpi_table_add(const QemuOpts *opts, Error **errp)
+diff --git a/hw/i386/acpi-build.c b/hw/i386/acpi-build.c
+index a5d3fbf..9e0e16a 100644
+--- a/hw/i386/acpi-build.c
++++ b/hw/i386/acpi-build.c
+@@ -224,6 +224,8 @@ static void acpi_get_pci_info(PcPciInfo *info)
+ #define ACPI_BUILD_TABLE_FILE "etc/acpi/tables"
+ #define ACPI_BUILD_RSDP_FILE "etc/acpi/rsdp"
+ 
++extern size_t slic_table_offset;
++
+ static void
+ build_header(GArray *linker, GArray *table_data,
+              AcpiTableHeader *h, const char *sig, int len, uint8_t rev)
+@@ -237,6 +239,11 @@ build_header(GArray *linker, GArray *table_data,
+     h->oem_revision = cpu_to_le32(1);
+     memcpy(h->asl_compiler_id, ACPI_BUILD_APPNAME4, 4);
+     h->asl_compiler_revision = cpu_to_le32(1);
++    if (memcmp(sig, "RSDT", 4) == 0 && slic_table_offset) {
++      /* for win7: OEM info in RSDT and SLIC should be the same */
++      AcpiTableHeader *s = (AcpiTableHeader *)(acpi_tables + slic_table_offset);
++      memcpy(h->oem_id, s->oem_id, 6 + 4 + 4);
++    }
+     h->checksum = 0;
+     /* Checksum to be filled in by Guest linker */
+     bios_linker_loader_add_checksum(linker, ACPI_BUILD_TABLE_FILE,

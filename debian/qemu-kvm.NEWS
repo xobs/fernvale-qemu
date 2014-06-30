@@ -1,0 +1,48 @@
+qemu (1.7.0+dfsg-2) unstable; urgency=low
+
+  qemu-kvm package is back with just a one-line shell wrapper
+  /usr/bin/kvm which runs qemu-system-x86.
+
+ -- Michael Tokarev <mjt@tls.msk.ru>  Thu, 28 Nov 2013 20:42:53 +0400
+
+qemu (1.3.0+dfsg-2exp) experimental; urgency=low
+
+  * Since version 1.3 of qemu, all remaining bits of former qemu-kvm
+    were merged into qemu.  So since this version, we don't have
+    separate qemu-kvm source package, and qemu-kvm binary package
+    becomes transitional, from qemu-kvm to qemu-system-x86.
+
+    New executable to run instead of kvm is qemu-system-x86_64.
+
+    We provide a command-line compatibility wrapper in the usual
+    place, /usr/bin/kvm, which prepends a few command-line flags
+    and calls qemu-system-x86_64.  The result should behave the
+    same as old qemu-kvm.
+
+    The main difference between old qemu-kvm (kvm) binary and
+    qemu-system-x86_64 is that qemu-system-x86_64 (new) does not
+    enable kvm by default, user should do that explicitly by
+    specifying either -enable-kvm option (in which case the command
+    will fail if kvm extensions are not available due to hardware
+    lacking them or other reasons), or using -machine accel=kvm:tcg,
+    which will fall back to emulation mode if kvm can not be initialized.
+    The latter is the way used in the wrapper script.
+
+  * Old qemu-kvm way to specify bootable device by using ,boot=on device
+    property is not supported by qemu-system-x86_64.  That way has been
+    deprecated in Debian version of qemu-kvm for a while too, it worked
+    but produced a warning.  The most important reason why it existed
+    was to support booting from SCSI devices (from virtual LSI Logic SCSI
+    controller).  This device is now supported natively using bootorder
+    property, like all other devices.
+
+  * Old qemu-kvm used to emulate virtual Realtek RTL8139 network card by
+    default.  New qemu emulates Intel e1000 NIC instead.  The latter is
+    more efficient and featureful, but unless you explicitly specified
+    which NIC to emulate, you may need to reconfigure either your guest
+    or the command line you use to run it.
+
+  * Please note that old qemu-kvm configuration files (in /etc/kvm/)
+    are no longer used.
+
+ -- Michael Tokarev <mjt@tls.msk.ru>  Tue, 22 Jan 2013 01:12:52 +0400

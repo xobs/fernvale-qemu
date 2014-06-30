@@ -1,0 +1,43 @@
+Subject: retry pxe- after loading efi-
+From: Michael Tokarev <mjt@tls.msk.ru>
+Forwarded: no
+Debian-Specific: yes
+
+As of version 1.5, qemu now uses efi-XXXX.rom for network boot ROMS
+instead of previously used pxe-XXXX.rom.  This (hackish) patch, after
+an attempt to load efi-XXXX.rom fails, tries again now searching for
+pxe-XXXX.rom instead.  This way we can still use old pxe-qemu package
+which does not provide efi roms.
+
+The patch is debian-specific, since upstream ships all necessary ROMs
+in the source tarball and so always uses the right ROMs.
+
+/mjt
+
+--- a/vl.c
++++ b/vl.c
+@@ -2365,6 +2365,7 @@ char *qemu_find_file(int type, const cha
+         abort();
+     }
+ 
++retry:
+     for (i = 0; i < data_dir_idx; i++) {
+         buf = g_strdup_printf("%s/%s%s", data_dir[i], subdir, name);
+         if (access(buf, R_OK) == 0) {
+@@ -2373,6 +2374,16 @@ char *qemu_find_file(int type, const cha
+         }
+         g_free(buf);
+     }
++
++    if (memcmp(name, "efi-", 4) == 0 && type == QEMU_FILE_TYPE_BIOS) {
++        /* if not found but requested efi-*, retry with pxe-* */
++        buf = alloca(strlen(name) + 1);
++        strcpy(buf, "pxe");
++        strcpy(buf + 3, name + 3);
++        name = buf;
++        goto retry;
++    }
++
+     return NULL;
+ }
+ 

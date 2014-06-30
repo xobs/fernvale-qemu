@@ -1,0 +1,9 @@
+debian/qemu-ifdown etc/
+debian/tmp/usr/share/man/man1/qemu.1
+pc-bios/qemu-icon.bmp /usr/share/qemu/
+pc-bios/qemu_logo_no_text.svg /usr/share/qemu/
+# until we have qemu-docs package,
+# these are duplicated here and in qemu metapackage
+debian/tmp/usr/share/doc/qemu/qemu-tech.html /usr/share/doc/qemu-system/
+debian/tmp/usr/share/doc/qemu/qemu-doc.html /usr/share/doc/qemu-system/
+debian/tmp/usr/share/doc/qemu/qmp-commands.txt /usr/share/doc/qemu-system/

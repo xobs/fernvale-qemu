@@ -1,0 +1,9 @@
+# == begin update-alternatives maintscript fragment ==
+# this should go away for jessie+1
+if [ ".$1" = .configure ] && dpkg --compare-versions "$2" lt-nl "2.0.0~rc1+dfsg-2"
+then
+  for arch in @ARCH@ ; do
+    update-alternatives --remove qemu /usr/bin/qemu-system-$arch
+  done
+fi
+# == end update-alternatives maintscript fragment ==

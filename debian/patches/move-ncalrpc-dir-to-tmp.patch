@@ -1,0 +1,40 @@
+From: Michael Buesch <m@bues.ch>
+Subject: [PATCH] slirp/smb: Move ncalrpc directory to tmp
+Bug-Debian: http://bugs.debian.org/728876
+
+The smbd forked by qemu still uses the default ncalrpc directory
+in /var/run/samba. This may lead to problems, if /var/run/samba
+does not exist (for example if /var/run is a tmpfs and the host
+smbd was not started).
+
+This leads to the following error message from samba
+and an unworkable smbd:
+	Failed to create pipe directory /var/run/samba/ncalrpc - No such file or directory
+
+Fix this by pointing smbd to /tmp/qemu-smb.%d.%d/ncalrpc as ncalrpc directory.
+Smbd will create the actual ncalrpc subdirectory on its own.
+
+Signed-off-by: Michael Buesch <m@bues.ch>
+
+---
+
+Index: qemu-1.6.0+dfsg/net/slirp.c
+===================================================================
+--- qemu-1.6.0+dfsg.orig/net/slirp.c
++++ qemu-1.6.0+dfsg/net/slirp.c
+@@ -527,6 +527,7 @@ static int slirp_smb(SlirpState* s, cons
+             "pid directory=%s\n"
+             "lock directory=%s\n"
+             "state directory=%s\n"
++            "ncalrpc dir=%s/ncalrpc\n"
+             "log file=%s/log.smbd\n"
+             "smb passwd file=%s/smbpasswd\n"
+             "security = user\n"
+@@ -539,6 +540,7 @@ static int slirp_smb(SlirpState* s, cons
+             s->smb_dir,
+             s->smb_dir,
+             s->smb_dir,
++            s->smb_dir,
+             s->smb_dir,
+             s->smb_dir,
+             s->smb_dir,

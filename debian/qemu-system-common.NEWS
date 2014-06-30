@@ -1,0 +1,14 @@
+qemu (2.0.0+dfsg-1) unstable; urgency=low
+
+   qemu-system-* packages does not provide /usr/bin/qemu alternative
+   anymore, and all various alternatives will be unregistered at new
+   individual qemu-system packages install.  This is because different
+   architectures are not really alternatives, and never has been.
+   Historically, qemu emulated just one architecture, so the name "qemu"
+   was used for the binary.  However when more architectures were added,
+   the old name "qemu" was used as an alternative, pointing to one of
+   the emulators.  Upstream does not use the name "qemu" for binaries
+   for a long time.  If you have scripts using the old name "qemu"
+   please update them to use the right qemu-system-* binary.
+
+ -- Michael Tokarev <mjt@tls.msk.ru>  Fri, 11 Apr 2014 19:57:22 +0400
