@@ -135,11 +135,25 @@ static int my_getresponse(int fd, char *buf, int len)
 #ifdef FERNLY_IO_DEBUG
             fprintf(stderr, " read line: (%s)]]\n", buf);
 #endif
+            if (strstr(buf, "Handled IRQ")) {
+                printf(">>> HANDLED IRQ <<<\n");
+            }
+            if (strstr(buf, "Handled FIQ")) {
+                printf(">>> HANDLED IRQ <<<\n");
+            }
+
             return offset;
         }
 
         else
             buf[offset++] = byte;
+    }
+
+    if (strstr(buf, "Handled IRQ")) {
+        printf(">>> HANDLED IRQ <<<\n");
+    }
+    if (strstr(buf, "Handled FIQ")) {
+        printf(">>> HANDLED IRQ <<<\n");
     }
 
     buf[offset++] = '\0';
@@ -258,10 +272,28 @@ static void fernvale_live_mem_write(void *opaque, hwaddr addr,
     printf(" ok\n");
 }
 
+/* These are used for zero write combining */
+static int f00d_count = 0;
+static uint32_t f00d_start;
+static uint32_t f00d_end;
+
 static uint64_t fernvale_f00d_read(void *opaque, hwaddr addr,
                                     unsigned size)
 {
-    printf("XXX f00d read??\n");
+    /* We're either not writing zeroes, or not continuing a run.  Flush. */
+    if (f00d_count) {
+        char cmd[128];
+        int len;
+
+//        printf("f00d: Flushing zeroes from 0x%08x to 0x%08x\n", f00d_start, f00d_end);
+        len = snprintf(cmd, sizeof(cmd)-1, "z%08x%08x", f00d_start, f00d_end);
+        my_sendcmd(fernvale_fd, cmd, len);
+        
+        /* Read the line back */
+        len = my_getresponse(fernvale_fd, cmd, sizeof(cmd));
+
+        f00d_count = 0;
+    }
     return fernvale_live_mem_read(opaque, addr, size);
 }
 
@@ -274,31 +306,52 @@ static void fernvale_f00d_write(void *opaque, hwaddr addr,
     char cmd[128];
     int len;
 
+    /* Flush out the zeroes since we've reached the end of a run */
+    if (val == 0) {
+
+        /* Start a new run */
+        if (f00d_count == 0) {
+            f00d_count++;
+            f00d_start = offset;
+            f00d_end = offset + 4;
+//            printf("f00d -- starting a new run.  Start: 0x%08x  End: 0x%08x\n", f00d_start, f00d_end);
+            return;
+        }
+
+        /* If this is a continuation of a run, buffer the write and return */
+        if (offset == f00d_end) {
+            f00d_count++;
+            f00d_end = offset + 4;
+//            printf("f00d -- continuing run.  Start: 0x%08x  End: 0x%08x\n", f00d_start, f00d_end);
+            return;
+        }
+    }
+
+    /* We're either not writing zeroes, or not continuing a run.  Flush. */
+    if (f00d_count) {
+//        printf("f00d: Flushing zeroes from 0x%08x to 0x%08x\n", f00d_start, f00d_end);
+        len = snprintf(cmd, sizeof(cmd)-1, "z%08x%08x", f00d_start, f00d_end);
+        my_sendcmd(fernvale_fd, cmd, len);
+        
+        /* Read the line back */
+        len = my_getresponse(fernvale_fd, cmd, sizeof(cmd));
+
+        f00d_count = 0;
+    }
+
+    if (val == 0) {
+        f00d_count++;
+        f00d_start = offset;
+        f00d_end = offset + 4;
+//        printf("f00d -- at the bottom, starting new run.  Start: 0x%08x  End: 0x%08x\n", f00d_start, f00d_end);
+        return;
+    }
+
     len = snprintf(cmd, sizeof(cmd)-1, "wf%08x%08x", offset, value);
     my_sendcmd(fernvale_fd, cmd, len);
     
     /* Read the line back */
     len = my_getresponse(fernvale_fd, cmd, sizeof(cmd));
-    /*
-    static int fd = 0;
-    static int count = 0;
-    if (addr < 0x100) {
-        fernvale_live_mem_write(opaque, addr, val, size);
-        return;
-    }
-
-    if (addr == 0x100) {
-        char filename[128];
-        if (fd)
-            close(fd);
-        snprintf(filename, sizeof(filename)-1, "fb-%04d.bin", count++);
-        fd = open(filename, O_WRONLY | O_CREAT, 0666);
-        if (-1 == fd) {
-            perror("Couldn't re-open fb");
-        }
-    }
-    write(fd, &val, size);
-    */
 }
 
 static const MemoryRegionOps fernvale_f00d_ops = {
