@@ -25,6 +25,7 @@
 
 #define FERNVALE_DEBUG_UART "/dev/ttymxc2"
 #define FERNVALE_DEBUG_PROMPT "fernly>"
+#define FERNVALE_READY_CHAR 'k'
 static int fernvale_fd;
 
 #define FV_IRAM_SIZE 0xd100
@@ -87,7 +88,7 @@ static void fernvale_cpu_reset(void *opaque)
 #endif
 }
 
-static int my_readline(int fd, char *buf, int len)
+static int my_getresponse(int fd, char *buf, int len)
 {
     int offset = 0;
     ssize_t ret;
@@ -107,7 +108,7 @@ static int my_readline(int fd, char *buf, int len)
         ret = select(fd + 1, &fds, NULL, NULL, &tv);
         if (ret == -1) {
             if (errno == EINTR) {
-                fprintf(stderr, " [interrupted select - retrying] ");
+//                fprintf(stderr, " [interrupted select - retrying] ");
                 continue;
             }
             perror("Couldn't select");
@@ -125,14 +126,11 @@ static int my_readline(int fd, char *buf, int len)
                 perror("couldn't read");
                 return ret;
             }
-            fprintf(stderr, " [interrupted read - retrying] ");
+//            fprintf(stderr, " [interrupted read - retrying] ");
             continue;
         }
 
-        if (byte == '\r') // Ignore \r
-            continue;
-
-        if (byte == '\n') {
+        if (byte == FERNVALE_READY_CHAR) {
             buf[offset++] = '\0';
 #ifdef FERNLY_IO_DEBUG
             fprintf(stderr, " read line: (%s)]]\n", buf);
@@ -151,10 +149,8 @@ static int my_readline(int fd, char *buf, int len)
     return offset;
 }
 
-static int my_writeline(int fd, char *buf, int len)
+static int my_sendcmd(int fd, char *buf, int len)
 {
-    const char *crlf = "\r\n";
-    int crlf_ret;
     int ret;
 
 #ifdef FERNLY_IO_DEBUG
@@ -164,18 +160,6 @@ static int my_writeline(int fd, char *buf, int len)
         ret = write(fd, buf, len);
         if (-1 == ret) {
             perror("Unable to write to serial port");
-            if (errno == EINTR)
-                continue;
-            return -1;
-        }
-        else
-            break;
-    }
-
-    while (1) {
-        crlf_ret = write(fd, crlf, 2);
-        if (-1 == crlf_ret) {
-            perror("Unable to write crlf to serial port");
             if (errno == EINTR)
                 continue;
             return -1;
@@ -219,34 +203,16 @@ static uint64_t fernvale_live_mem_read(void *opaque, hwaddr addr,
 
     printf("READ %s Fernvale Live 0x%08x =", sizeText, offset);
     fflush(stdout);
-    my_writeline(fernvale_fd, cmd, len);
+    my_sendcmd(fernvale_fd, cmd, len);
 
-    /* Read the line back */
-    len = my_readline(fernvale_fd, cmd, sizeof(cmd));
+    /* Read the response */
+    len = my_getresponse(fernvale_fd, cmd, sizeof(cmd));
     if (len == -1) {
-        perror("Unable to read line");
+        perror("Unable to read response");
         return -1;
     }
 
-    /* Read result back */
-    len = my_readline(fernvale_fd, cmd, sizeof(cmd));
-    if (len == -1) {
-        perror("Unable to read result");
-        return -1;
-    }
-
-    ret = strtoul(cmd + 10, NULL, 16);
-
-    /* Read prompt */
-    len = my_readline(fernvale_fd, cmd, sizeof(cmd));
-    if (-1 == len) {
-        perror("Unable to read prompt");
-        return -1;
-    }
-
-    if (strncmp(cmd, FERNVALE_DEBUG_PROMPT, strlen(FERNVALE_DEBUG_PROMPT))) {
-        printf("Sync error!  Expected [%s], got [%s]\n", FERNVALE_DEBUG_PROMPT, cmd);
-    }
+    ret = strtoul(cmd, NULL, 16);
 
     printf(" 0x%08x... ok\n", ret);
 
@@ -265,51 +231,81 @@ static void fernvale_live_mem_write(void *opaque, hwaddr addr,
     /* Write command out */
     switch(size) {
         case 1:
-            len = snprintf(cmd, sizeof(cmd)-1, "wo%08x %02x", offset, 0xff & value);
+            len = snprintf(cmd, sizeof(cmd)-1, "wo%08x%02x", offset, 0xff & value);
             printf("WRITE BYTE Fernvale Live 0x%08x = 0x%02x...", offset, 0xff & (value));
             break;
         case 2:
-            len = snprintf(cmd, sizeof(cmd)-1, "wt%08x %04x", offset, 0xffff & value);
+            len = snprintf(cmd, sizeof(cmd)-1, "wt%08x%04x", offset, 0xffff & value);
             printf("WRITE WORD Fernvale Live 0x%08x = 0x%04x...", offset, 0xffff & value);
             break;
         case 4:
         default:
-            len = snprintf(cmd, sizeof(cmd)-1, "wf%08x %08x", offset, value);
+            len = snprintf(cmd, sizeof(cmd)-1, "wf%08x%08x", offset, value);
             printf("WRITE DWORD Fernvale Live 0x%08x = 0x%08x...", offset, value);
             break;
     }
 
     fflush(stdout);
-    my_writeline(fernvale_fd, cmd, len);
+    my_sendcmd(fernvale_fd, cmd, len);
 
     /* Read the line back */
-    len = my_readline(fernvale_fd, cmd, sizeof(cmd));
+    len = my_getresponse(fernvale_fd, cmd, sizeof(cmd));
     if (len == -1) {
         perror("Unable to read line");
         return;
     }
 
-    /* Read result back */
-    len = my_readline(fernvale_fd, cmd, sizeof(cmd));
-    if (len == -1) {
-        perror("Unable to read result");
-        return;
-    }
-
-    /* Read prompt */
-    len = my_readline(fernvale_fd, cmd, sizeof(cmd));
-    if (-1 == len) {
-        perror("Unable to read prompt");
-        return;
-    }
-
-    if (strncmp(cmd, FERNVALE_DEBUG_PROMPT, strlen(FERNVALE_DEBUG_PROMPT))) {
-        printf("Sync error!  Expected [%s], got [%s]\n", FERNVALE_DEBUG_PROMPT, cmd);
-        return;
-    }
-
     printf(" ok\n");
 }
+
+static uint64_t fernvale_f00d_read(void *opaque, hwaddr addr,
+                                    unsigned size)
+{
+    printf("XXX f00d read??\n");
+    return fernvale_live_mem_read(opaque, addr, size);
+}
+
+static void fernvale_f00d_write(void *opaque, hwaddr addr,
+                                 uint64_t val, unsigned size)
+{
+    uint32_t base = (uint32_t)opaque;
+    uint32_t offset = base + addr;
+    uint32_t value = val;
+    char cmd[128];
+    int len;
+
+    len = snprintf(cmd, sizeof(cmd)-1, "wf%08x%08x", offset, value);
+    my_sendcmd(fernvale_fd, cmd, len);
+    
+    /* Read the line back */
+    len = my_getresponse(fernvale_fd, cmd, sizeof(cmd));
+    /*
+    static int fd = 0;
+    static int count = 0;
+    if (addr < 0x100) {
+        fernvale_live_mem_write(opaque, addr, val, size);
+        return;
+    }
+
+    if (addr == 0x100) {
+        char filename[128];
+        if (fd)
+            close(fd);
+        snprintf(filename, sizeof(filename)-1, "fb-%04d.bin", count++);
+        fd = open(filename, O_WRONLY | O_CREAT, 0666);
+        if (-1 == fd) {
+            perror("Couldn't re-open fb");
+        }
+    }
+    write(fd, &val, size);
+    */
+}
+
+static const MemoryRegionOps fernvale_f00d_ops = {
+    .read = fernvale_f00d_read,
+    .write = fernvale_f00d_write,
+    .endianness = DEVICE_NATIVE_ENDIAN,
+};
 
 static const MemoryRegionOps fernvale_live_mem_ops = {
     .read = fernvale_live_mem_read,
@@ -330,6 +326,16 @@ static void fernvale_hook_memory(uint32_t base, const char *name,
 static void fernvale_hook_live(uint32_t base, const char *name)
 {
     fernvale_hook_memory(base, name, &fernvale_live_mem_ops);
+}
+
+static void fernvale_hook_f00d(uint32_t base, const char *name)
+{
+    MemoryRegion *hook = g_new(MemoryRegion, 1);
+    MemoryRegion *address_space = get_system_memory();
+
+    memory_region_init_io(hook, NULL, &fernvale_f00d_ops,
+                (void *)base, name, 0x370000);
+    memory_region_add_subregion(address_space, base, hook);
 }
 
 static uint64_t fernvale_power_read(void *opaque, hwaddr addr, unsigned size)
@@ -370,91 +376,14 @@ static const MemoryRegionOps fernvale_power_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
-static uint32_t a014[] = {
-    0x00010000,     /* 0x00 */
-    0x0b0b7790,     /* 0x04 */
-    0x00010000,     /* 0x08 */
-    0x00010000,     /* 0x0c */
-
-    0x00010000,     /* 0x10 */
-    0x00010000,     /* 0x14 */
-    0x00010000,     /* 0x18 */
-    0,              /* 0x1c */
-
-    0,              /* 0x20 */
-    0,              /* 0x24 */
-    0,              /* 0x28 */
-    0,              /* 0x2c */
-
-    0,              /* 0x30 */
-    0,              /* 0x34 */
-    0,              /* 0x38 */
-    0,              /* 0x3c */
-
-    0,              /* 0x40 */
-    0,              /* 0x44 */
-    0,              /* 0x48 */
-    0,              /* 0x4c */
-};
-
-static uint64_t fernvale_a014_read(void *opaque, hwaddr addr, unsigned size)
+static uint64_t fernvale_a051_read(void *opaque, hwaddr addr, unsigned size)
 {
     uint64_t val;
 
-    return fernvale_live_mem_read(opaque, addr, size);
-
     switch (addr) {
-        case 0x800:
-            val = 0xaf;
-            break;
-
-        case 0x801:
-            val = 0xff;
-            break;
-
-        case 0x802:
-            val = 0xff;
-            break;
-
-        case 0x803:
-            val = 0x02;
-            break;
-
         case 0x00:
-        case 0x04:
-        case 0x08:
-        case 0x0c:
-
-        case 0x10:
-        case 0x14:
-        case 0x18:
-        case 0x1c:
-
-        case 0x20:
-        case 0x24:
-        case 0x28:
-        case 0x2c:
-
-        case 0x30:
-        case 0x34:
-        case 0x38:
-        case 0x3c:
-
-        case 0x40:
-        case 0x44:
-        case 0x48:
-        case 0x4c:
-            val = a014[addr];
-
-            if (addr == 0x00) {
-                if ((val & 0xf) == 0xc) {
-                    a014[addr] |= 2;
-                }
-                else if ((val & 0xf) == 0xa) {
-                    a014[addr] &= ~2;
-                }
-            }
-            break;
+            printf("READ WORD Fernvale a051 0xa051%04x = 2\n", (int)addr);
+            return 4;
 
         default:
             printf("%s: Bad register 0x" TARGET_FMT_plx "\n", __func__, addr);
@@ -462,6 +391,7 @@ static uint64_t fernvale_a014_read(void *opaque, hwaddr addr, unsigned size)
             break;
     }
 
+    /*
     switch(size) {
         case 1:
             printf("READ BYTE Fernvale a014 0xa014%04x = 0x%02x...\n", (int)addr, 0xff & (int)val);
@@ -476,75 +406,40 @@ static uint64_t fernvale_a014_read(void *opaque, hwaddr addr, unsigned size)
             printf("READ DWORD Fernvale a014 0xa014%04x = 0x%08x...\n", (int)addr, (int)val);
             break;
     }
+    */
     return val;
 }
 
-static void fernvale_a014_write(void *opaque, hwaddr addr,
+static void fernvale_a051_write(void *opaque, hwaddr addr,
                                  uint64_t val, unsigned size)
 {
-    fernvale_live_mem_write(opaque, addr, val, size);
-    return;
 
     /* Write command out */
     switch(size) {
         case 1:
-            printf("WRITE BYTE Fernvale a014 0xa014%04x = 0x%02x...\n", (int)addr, 0xff & (int)val);
+            printf("WRITE BYTE Fernvale a051 0xa051%04x = 0x%02x...\n", (int)addr, 0xff & (int)val);
             break;
 
         case 2:
-            printf("WRITE WORD Fernvale a014 0xa014%04x = 0x%04x...\n", (int)addr, 0xffff & (int)val);
+            printf("WRITE WORD Fernvale a051 0xa051%04x = 0x%04x...\n", (int)addr, 0xffff & (int)val);
             break;
 
         case 4:
         default:
-            printf("WRITE DWORD Fernvale a014 0xa014%04x = 0x%08x...\n", (int)addr, (int)val);
+            printf("WRITE DWORD Fernvale a051 0xa051%04x = 0x%08x...\n", (int)addr, (int)val);
             break;
     }
 
     switch (addr) {
-        case 0x00:
-        case 0x04:
-        case 0x08:
-        case 0x0c:
-
-        case 0x10:
-        case 0x14:
-        case 0x18:
-        case 0x1c:
-
-        case 0x20:
-        case 0x24:
-        case 0x28:
-        case 0x2c:
-
-        case 0x30:
-        case 0x34:
-        case 0x38:
-        case 0x3c:
-
-        case 0x40:
-        case 0x44:
-        case 0x48:
-        case 0x4c:
-            a014[addr] = val;
-//            if (addr == 0)
-                fernvale_live_mem_write(opaque, addr, val & ~0x8, size);
-//            else
-//                fernvale_live_mem_write(opaque, addr, val, size);
-            break;
-
-        case 0x800:
-            break;
-
         default:
             printf("%s: Bad register 0x" TARGET_FMT_plx "\n", __func__, addr);
             break;
     }
 }
 
-static const MemoryRegionOps fernvale_a014_ops = {
-    .read = fernvale_a014_read,
-    .write = fernvale_a014_write,
+static const MemoryRegionOps fernvale_a051_ops = {
+    .read = fernvale_a051_read,
+    .write = fernvale_a051_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
@@ -695,27 +590,35 @@ Attributes: 3
         sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, FV_UART_BASE);
     }
 
-    /* Bootloader hacks */
-    /* NOP out weird write to 0xa014 */
-    /*
-    io_mem_write(pflash_cfi01_get_memory(spi), 0x34e0, 0x00, 1);
-    io_mem_write(pflash_cfi01_get_memory(spi), 0x34e1, 0xbf, 1);
-    io_mem_write(pflash_cfi01_get_memory(spi), 0x34e2, 0x00, 1);
-    io_mem_write(pflash_cfi01_get_memory(spi), 0x34e3, 0xbf, 1);
-    */
-
     fernvale_hook_live(0xa0700000, "unknown-a070");
     fernvale_hook_live(0xa0030000, "unknown-a003");
+    fernvale_hook_live(0xa0060000, "unknown-a003");
     fernvale_hook_live(0xa0010000, "unknown-a001");
     fernvale_hook_live(0xa0020000, "unknown-a002");
     fernvale_hook_live(0xa0110000, "unknown-a011");
     fernvale_hook_live(0xa01c0000, "unknown-a01c");
     fernvale_hook_live(0x707f0000, "unknown-707f");
     fernvale_hook_live(0xa0530000, "unknown-a053");
-    fernvale_hook_live(0xf00d0000, "unknown-f00d");
-    fernvale_hook_live(0xf0130000, "unknown-f013");
+    fernvale_hook_live(0xa0140000, "unknown-a014");
+    fernvale_hook_memory(0xa0510000, "unknown-a051", &fernvale_a051_ops);
+    fernvale_hook_live(0xa0540000, "unknown-a054");
+    fernvale_hook_live(0xa0520000, "unknown-a052");
+    fernvale_hook_live(0xa0510000, "unknown-a051");
+    fernvale_hook_live(0xa0500000, "unknown-a050");
     fernvale_hook_memory(0xa0000000, "ident", &fernvale_power_ops);
-    fernvale_hook_memory(0xa0140000, "unknown-a014", &fernvale_a014_ops);
+
+    fernvale_hook_f00d(0xf00d0000, "f00d");
+    fernvale_hook_live(0xf0450000, "unknown-f045");
+    fernvale_hook_live(0xf0460000, "unknown-f046");
+    fernvale_hook_live(0xf0470000, "unknown-f047");
+    fernvale_hook_live(0xf0480000, "unknown-f048");
+    fernvale_hook_live(0xf0490000, "unknown-f049");
+    fernvale_hook_live(0xf04a0000, "unknown-f04a");
+    fernvale_hook_live(0xf04b0000, "unknown-f04b");
+    fernvale_hook_live(0xf04c0000, "unknown-f04c");
+    fernvale_hook_live(0xf04d0000, "unknown-f04d");
+    fernvale_hook_live(0xf04e0000, "unknown-f04e");
+    fernvale_hook_live(0xf04f0000, "unknown-f04f");
 
     qemu_register_reset(fernvale_cpu_reset, cpu);
 }
