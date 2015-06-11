@@ -65,22 +65,22 @@ static void fernvale_cpu_reset(void *opaque)
     /* Copy observed register values from fernly */
     env->regs[0] = 0x00000006;
     env->regs[1] = 0x00000006;
-    env->regs[2] = 0x10008a46;
-    env->regs[3] = 0xa0080014;
-    env->regs[4] = 0x10003460;
-    env->regs[5] = 0x70008714;
-    env->regs[6] = 0x700086f8;
-    env->regs[7] = 0x70006860;
+    env->regs[2] = 0x10008a46; /* memory mapped SPI chip */
+    env->regs[3] = 0xa0080014; /* UART1 Line-Status Register */
+    env->regs[4] = 0x10003460; /* memory mapped SPI chip, code function pointer */
+    env->regs[5] = 0x70008714; /* On-chip SRAM (maybe cache?) */
+    env->regs[6] = 0x700086f8; /* On-chip SRAM (maybe cache?) */
+    env->regs[7] = 0x70006860; /* On-chip SRAM (maybe cache?) */
     env->regs[8] = 0x00000000;
     env->regs[9] = 0x00000000;
-    env->regs[10] = 0x70002040;
-    env->regs[11] = 0x7000ce5c;
-    env->regs[12] = 0x7000cc80;
-    env->regs[13] = 0x7000cdb4;
-    env->regs[14] = 0x10003c38;
+    env->regs[10] = 0x70002040; /* On-chip SRAM (maybe cache?) */
+    env->regs[11] = 0x7000ce5c; /* On-chip SRAM (maybe cache?) */
+    env->regs[12] = 0x7000cc80; /* On-chip SRAM (maybe cache?) */
+    env->regs[13] = 0x7000cdb4; /* On-chip SRAM (maybe cache?) */
+    env->regs[14] = 0x10003c38; /* memory mapped SPI chip */
 
     /* PC */
-    env->regs[15] = 0x10003460;
+    env->regs[15] = 0x10003460; /* memory mapped SPI chip, code function pointer */
 
 #else /* Main program */
     /* Place the PC at the start of the main program */
@@ -602,27 +602,27 @@ Attributes: 3
         sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, FV_UART_BASE);
     }
 
-    fernvale_hook_live(0xa0700000, "unknown-a070");
-    fernvale_hook_live(0xa0030000, "unknown-a003");
-    fernvale_hook_live(0xa0060000, "unknown-a003");
-    fernvale_hook_live(0xa0010000, "unknown-a001");
-    fernvale_hook_live(0xa0020000, "unknown-a002");
-    fernvale_hook_live(0xa0110000, "unknown-a011");
-    fernvale_hook_live(0xa01c0000, "unknown-a01c");
+    fernvale_hook_live(0xa0700000, "unknown-a070"); /* Power management block */
+    fernvale_hook_live(0xa0030000, "unknown-a003"); /* WDT block */
+    fernvale_hook_live(0xa0060000, "unknown-a003"); /* IRQ Controller block */
+    fernvale_hook_live(0xa0010000, "unknown-a001"); /* Power, config block */
+    fernvale_hook_live(0xa0020000, "unknown-a002"); /* GPIO control block */
+    fernvale_hook_live(0xa0110000, "unknown-a011"); 
+    fernvale_hook_live(0xa01c0000, "unknown-a01c"); /* EFuse block */
     fernvale_hook_live(0x707f0000, "unknown-707f");
-    fernvale_hook_live(0xa0530000, "unknown-a053");
-    fernvale_hook_live(0xa0140000, "unknown-a014");
-    fernvale_hook_live(0xa0540000, "unknown-a054");
-    fernvale_hook_live(0xa0520000, "unknown-a052");
-    fernvale_hook_live(0xa0510000, "unknown-a051");
-    fernvale_hook_live(0xa0500000, "unknown-a050");
+    fernvale_hook_live(0xa0530000, "unknown-a053"); /* Level 1 cache block */
+    fernvale_hook_live(0xa0140000, "unknown-a014"); /* Serial flash block */
+    fernvale_hook_live(0xa0540000, "unknown-a054"); /* MPU config block */
+    fernvale_hook_live(0xa0520000, "unknown-a052"); /* Code decompression engine block */
+    fernvale_hook_live(0xa0510000, "unknown-a051"); /* Boot configuration block */
+    fernvale_hook_live(0xa0500000, "unknown-a050"); /* ARM configuration block */
     fernvale_hook_memory(0xa0000000, "ident", &fernvale_power_ops);
 
     fernvale_hook_f00d(0xf00d0000, "f00d");
 
-    fernvale_hook_live(0xa0710000, "unknown-a071");
-    fernvale_hook_live(0xa0180000, "unknown-a018");
-    fernvale_hook_live(0xa0070000, "unknown-a007");
+    fernvale_hook_live(0xa0710000, "unknown-a071"); /* RTC block */
+    fernvale_hook_live(0xa0180000, "unknown-a018"); /* TOPSM block */
+    fernvale_hook_live(0xa0070000, "unknown-a007"); /* DMA Controller block */
 
     qemu_register_reset(fernvale_cpu_reset, cpu);
 }
